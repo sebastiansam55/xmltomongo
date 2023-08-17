@@ -18,7 +18,7 @@ def try_convert(value):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
-            prog='xmltomongodb',
+            prog='xmltomongo',
             description='script that converts xml to mongodb documents'
     )
     parser.add_argument('importfile', help="XML File to be imported")
@@ -38,13 +38,15 @@ if __name__=="__main__":
     count = collection.count_documents({})
     if count==0:
         pass
+        print(colname)
     else:
-        collectionname = 'trace'+str(uuid.uuid4())
-        collection = db[collectionname]
-        print(collectionname)
-        pass
+        # if collection has records create a new one
+        colname = 'trace'+str(uuid.uuid4())
+        collection = db[colname]
+        print(colname)
 
-    tree = ET.parse('import.xml')
+
+    tree = ET.parse(args.importfile)
     root = tree.getroot()
     #print(root)
     for child in root:
@@ -63,3 +65,5 @@ if __name__=="__main__":
                 #print(mongodoc)
                 collection.insert_one(mongodoc)
                 count+=1
+
+    print(f"Inserted {count} documents to the {colname} collection on {args.database} database")
