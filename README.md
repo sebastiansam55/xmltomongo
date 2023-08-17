@@ -33,3 +33,15 @@ db.trace.find({"TextData": /arbitraryregex/}).forEach(function(i){print(i.TextDa
 ```
 
 The `forEach` ability detailed above is what makes mongodb so powerful and why I created the script. With this you can perform further analysis faster than with SQL.
+
+
+### MongoDB Compatibility
+The script uses the `pymongo` library to connect to MongoDB, this library has a limited set of versions supported;
+
+PyMongo supports MongoDB 3.6, 4.0, 4.2, 4.4, 5.0, 6.0, and 7.0.
+
+### MongoDB Authentication
+As the `-m` option accepts mongodb connection strings you can use that for authentication;
+```
+python3 ./main.py import.xml sqltrace trace -m "mongodb://username:password@location:27017/?authSource=admin"
+```
