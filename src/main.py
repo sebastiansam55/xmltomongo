@@ -36,14 +36,11 @@ if __name__=="__main__":
     collection = db[colname]
 
     count = collection.count_documents({})
-    if count==0:
-        pass
-        print(colname)
-    else:
+    if count!=0:
         # if collection has records create a new one
         colname = 'trace'+str(uuid.uuid4())
         collection = db[colname]
-        print(colname)
+    print(colname)
 
 
     tree = ET.parse(args.importfile)
