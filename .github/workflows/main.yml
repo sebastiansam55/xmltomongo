@@ -31,12 +31,26 @@ jobs:
     - name: Build executable
       run: |
         cd src
-        pyinstaller --onefile main.py
+        pyinstaller --onefile main.py -n xmltomongo
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
         name: executable-${{ matrix.os }}
         path: |
-          src/dist/main
-          src/dist/main.exe
+          src/dist/xmltomongo
+          src/dist/xmltomongo.exe
+
+    - name: Create Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: true
+        title: "Development Build"
+        files: |
+          README.md
+          src/dist/xmltomongo
+          src/dist/xmltomongo.exe
+
+
