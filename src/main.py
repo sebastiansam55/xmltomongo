@@ -36,8 +36,7 @@ if __name__=="__main__":
     collection = db[colname]
 
     count = collection.count_documents({})
-    if count!=0:
-        # if collection has records create a new one
+    if count!=0: # if collection has records create a new one
         colname = 'trace'+str(uuid.uuid4())
         collection = db[colname]
     print(colname)
@@ -45,7 +44,6 @@ if __name__=="__main__":
 
     tree = ET.parse(args.importfile)
     root = tree.getroot()
-    #print(root)
     for child in root:
         if 'Events' in child.tag:
             count = 0
@@ -54,12 +52,7 @@ if __name__=="__main__":
                 eventid = event.attrib['id']
                 mongodoc = {"event":eventname, "_id":count}
                 for column in event:
-                    try:
-                        pass
-                    except:
-                        pass
                     mongodoc[column.attrib['name']] = try_convert(column.text)
-                #print(mongodoc)
                 collection.insert_one(mongodoc)
                 count+=1
 
