@@ -41,16 +41,28 @@ jobs:
           src/dist/xmltomongo
           src/dist/xmltomongo.exe
 
-    - name: Create Release
+    - name: Create Windows Release
       uses: "marvinpinto/action-automatic-releases@latest"
+      if: ${{ matrix.os == 'windows-latest'}}
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "latest"
+        automatic_release_tag: "windows-latest"
         prerelease: true
-        title: "Development Build"
+        title: "Windows Development Build"
+        files: |
+          README.md
+          src/dist/xmltomongo.exe
+
+    - name: Create Ubuntu Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      if: ${{ matrix.os == 'ubuntu-latest'}}
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "ubuntu-latest"
+        prerelease: true
+        title: "Ubuntu Development Build"
         files: |
           README.md
           src/dist/xmltomongo
-          src/dist/xmltomongo.exe
 
 
