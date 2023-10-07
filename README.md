@@ -1,47 +1,66 @@
-# XMLTOMONGO
+# XML to MongoDB Importer
 
-Quick script to import a SQL Server trace XML file to MongoDB for further analysis.
+This script provides a utility to convert XML data into MongoDB documents, particularly designed to handle XML traces from SQL Server and Procmon.
 
-Yes I understand the irony of using MongoDB to review a SQL Server trace file, that's the fun part.
+**Yes, I understand the irony of using MongoDB to review a SQL Server trace file. That's the fun part!**
 
-Once imported to mongodb you can quickly sort and review events
+By importing trace data into MongoDB, you can leverage MongoDB's powerful querying capabilities to quickly sort, filter, and review events. This especially comes in handy when dealing with extensive trace data where MongoDB offers a more efficient way to analyze compared to traditional methods.
 
+## Features
 
+- Convert XML data into MongoDB documents.
+- Handle special XML types, namely SQL Server traces and Procmon traces.
+- Automatic data type conversion to match MongoDB's types, such as `int` and `datetime`.
+- Option to drop existing collections in the MongoDB database before importing.
+- If a specified collection already has records, a new one with a unique name will be created to prevent data mixing.
 
-### Usage
-`python3 ./main.py importfile.xml mongodbname mongodbcollectionname`
-
-If `mongodbcollectionname` is found to already exist it will append a uuid to `mongodbcollectionname` and use that to avoid having multiple traces in one collection.
-
-It should convert data to the matching MongoDB data types, like int and datetime.
-
-I've tested this with exactly one XML trace file but I assume as MS has not updated SQL Server profiler in literally over a decade the format will be consistent enough.
-
-### MongoDB Usage
-Once you have the trace imported you can use a MongoDB client like robo3t to sort or see what else is going on in the trace;
-```
-db.trace.distinct("LoginName") //show every user that logged in
-
-db.trace.sort({"StartTime":1}) //sort results by starttime, 1 means ascending, -1 descending
-
-db.trace.find({"Duration":{$exists:true}}).sort({"Duration":-1}) //sort results by duration. Note that you have to filter by events that have a duration associated with them. Other wise the top results will be events without a duration
-
-db.trace.find({"TextData":/arbitraryregex/}) //search TextData (aka the SQL statements executed) via regex
-
-db.trace.find({"TextData": /arbitraryregex/}).forEach(function(i){print(i.TextData)}) //print out each sql query returned by the filter
+## Usage
 
 ```
+python3 ./xmltomongo.py <importfile.xml> [OPTIONS]
+```
 
-The `forEach` ability detailed above is what makes mongodb so powerful and why I created the script. With this you can perform further analysis faster than with SQL.
+### Arguments & Options
 
+- `importfile`: Path to the XML file to be imported.
+- `-m, --mongodb`: MongoDB connection string. Default is `mongodb://localhost`. For authentication, use the format: `"mongodb://username:password@location:27017/?authSource=admin"`.
+- `-d, --database`: Name of the MongoDB database. Default is `sqltrace`.
+- `destcollection`: Name of the MongoDB collection to insert to. Default is `trace`.
+- `-t`: XML type. Options are "sql" for SQL Server traces and "procmon" for Procmon traces.
+- `--drop`: Option to drop collections before importing. Default is `False`.
 
-### MongoDB Compatibility
-The script uses the `pymongo` library to connect to MongoDB, this library has a limited set of versions supported;
+## MongoDB Usage
 
-PyMongo supports MongoDB 3.6, 4.0, 4.2, 4.4, 5.0, 6.0, and 7.0.
+Once the trace is imported, you can use a MongoDB client, such as robo3t, to perform various queries:
 
-### MongoDB Authentication
-As the `-m` option accepts mongodb connection strings you can use that for authentication;
+```
+db.trace.distinct("LoginName") // Show every user that logged in
+db.trace.sort({"StartTime":1}) // Sort results by start time (ascending)
+db.trace.find({"Duration":{$exists:true}}).sort({"Duration":-1}) // Sort by duration, filtering events that have a duration
+db.trace.find({"TextData":/arbitraryregex/}) // Search TextData (SQL statements) via regex
+db.trace.find({"TextData": /arbitraryregex/}).forEach(function(i){print(i.TextData)}) // Print each SQL query returned by the filter
+```
+
+The `forEach` ability in MongoDB allows for faster and more flexible analysis compared to traditional SQL.
+
+## MongoDB Compatibility
+
+The script uses the `pymongo` library for MongoDB connectivity. Supported MongoDB versions are:
+
+- MongoDB 3.6, 4.0, 4.2, 4.4, 5.0, 6.0, and 7.0.
+
+## MongoDB Authentication
+
+The `-m` option accepts MongoDB connection strings, which can include authentication details:
+
 ```
 python3 ./main.py import.xml sqltrace trace -m "mongodb://username:password@location:27017/?authSource=admin"
 ```
+
+## Date Handling in Process Monitor Output
+
+MongoDB utilizes full date-time representations for its date values. However, when dealing with Process Monitor output, it's essential to note that the XML trace only provides a time without an associated date. 
+
+As a result, to accommodate this in MongoDB while maintaining the integrity of the time values, all `Time_of_Day` values in the `events` collection for Process Monitor traces are set to have a date of `1900-01-01`. This serves as a placeholder date, ensuring that the time values from the Process Monitor output are preserved accurately.
+
+Users should be aware of this when querying or analyzing the data, ensuring that they account for this placeholder date and focus on the time values for accurate analysis.
