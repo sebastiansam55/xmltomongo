@@ -6,27 +6,68 @@ import argparse
 import uuid
 import datetime
 import time
+import re
+
+# def try_convert(value):
+int_pattern = re.compile(r'^\d+$')
+float_pattern = re.compile(r'^\d+\.\d+$')
+sql_time_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}T')
+procmon_time_pattern = re.compile(r'^\d{2}:\d{2}:\d{2}\.\d{7} \w{2}$')
+
+strings = [
+            # process monitor tags
+            "ProcessName", "ImagePath", "CommandLine", "CompanyName", "Version", 
+           "Description", "Owner", "Integrity", "Process_Name", "Operation",
+           "Path", "Result", "Detail", "AuthenticationId",
+           #sql server profiler names
+           "NTUserName", "ApplicationName", "LoginName", "DatabaseName", "TextData",
+           "Error"
+           
+           ]
+integers = [ # process monitor tags
+            "ProcessIndex", "ProcessId", "ParentProcessId", "ParentProcessIndex",
+             "CreateTime", "FinishTime", "IsVirtualized", "Is64bit",
+             "PID", "Duration"
+            # sql server profiler names
+            "ClientProcessID", "SPID", "Reads", "Writes", "CPU"
+            ]
+floats = []
+
+
 
 def try_convert(value):
-    try:
+    if value is None:
+        return None
+    if bool(int_pattern.match(value)):
         return int(value)
-    except (ValueError, TypeError):
-        try:
-            return float(value)
-        except (ValueError, TypeError):
+    elif bool(float_pattern.match(value)):
+        return float(value)
+    elif bool(time_pattern.match(value)):
+        if args.type == "sql":
+            return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%f%z')
+        elif args.type == "procmon":
+            time_string_truncated = value[:-4] + value[-3:]
+            return datetime.datetime.strptime(time_string_truncated, '%I:%M:%S.%f %p')
+    else:
+        return value
+    
+def try_convert_by_tag(value, tag):
+    if tag in strings:
+        return value
+    elif tag in integers:
+        return int(value)
+    elif tag == "Time_of_Day" or tag=="StartTime" or tag=="EndTime":
+        if args.type == "procmon":
+            time_string_truncated = value[:-4] + value[-3:]
+            return datetime.datetime.strptime(time_string_truncated, '%I:%M:%S.%f %p')
+        elif args.type == "sql":
             try:
-                
-                if args.type == "sql":
-                    #SQL Server profiler timestamp format
-                    #<Column id="14" name="StartTime">2023-08-08T09:09:43.887-04:00</Column>
-                    return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%f%z')
-                elif args.type == "procmon":
-                    #Procmon Time_of_Day timestamp format
-                    #<Time_of_Day>10:01:00.0554208 AM</Time_of_Day>
-                    time_string_truncated = value[:-4] + value[-3:]
-                    return datetime.datetime.strptime(time_string_truncated, '%I:%M:%S.%f %p')
-            except (ValueError, TypeError):
-                return value
+                return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%f%z')
+            except ValueError:
+                return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%S%z')
+    else:
+        return try_convert(value)
+
 
 def sql_server_trace(root, mongodb):
     if args.drop:
@@ -35,14 +76,16 @@ def sql_server_trace(root, mongodb):
     for child in root:
         if 'Events' in child.tag:
             count = 0
+            mongobatch = []
             for event in child:
                 eventname = event.attrib['name']
-                eventid = event.attrib['id']
+                # eventid = event.attrib['id']
                 mongodoc = {"event":eventname, "_id":count}
                 for column in event:
-                    mongodoc[column.attrib['name']] = try_convert(column.text)
-                collection.insert_one(mongodoc)
+                    mongodoc[column.attrib['name']] = try_convert_by_tag(column.text, column.attrib['name'])
+                mongobatch.append(mongodoc)
                 count+=1
+            collection.insert_many(mongobatch)
 
     print(f"Inserted {count} documents to the {colname} collection on {args.database} database")
     pass
@@ -59,29 +102,43 @@ def procmon_trace(root, mongodb):
         print(child.tag)
         if 'processlist' in child.tag:
             count = 0
+            mongobatch = []
             for process in child:
                 mongodoc = {"_id":count}
                 for column in process:
-                    mongodoc[column.tag] = try_convert(column.text)
+                    mongodoc[column.tag] = try_convert_by_tag(column.text, column.tag)
 
-                process_collection.insert_one(mongodoc)
+                mongobatch.append(mongodoc)
                 count += 1
                 if count % 100 == 0:
                     print(f"processed {count} documents")
+            process_collection.insert_many(mongobatch)
             print(f"Inserted {count} documents to the processes collection on {args.database} database")
                 # print(mongodoc)
         if 'eventlist' in child.tag:
             count = 0
             start = time.time()
+            mongobatch = []
             for event in child:
                 mongodoc = {"_id":count}
                 for column in event:
-                    mongodoc[column.tag] = try_convert(column.text)
+                    mongodoc[column.tag] = try_convert_by_tag(column.text, column.tag)
+                    #TODO add timestamp to capture full perciseness of the 
+                    # available data. try_convert literally truncates it otherwise
+                    # if column.tag is "Time_of_Day":
+                        # mongodoc[timestamp]
 
-                event_collection.insert_one(mongodoc)
+                # event_collection.insert_one(mongodoc)
+                mongobatch.append(mongodoc)
                 count += 1
-                if count % 10000 == 0:
-                    print(f"processed {count} documents, time elapsed {time.time()-start}")
+                if count % 50000 == 0:
+                    event_collection.insert_many(mongobatch)
+                    print(f"Processed and inserted {count} documents, time elapsed {time.time()-start}")
+                    
+                    # print(f"Inserted 50000 documents to mongo, {time.time()-start}")
+                    mongobatch = []
+            event_collection.insert_many(mongobatch)
+            print(f"Processed and inserted {count} documents, time elapsed {time.time()-start}")
             print(f"Inserted {count} documents to the event collection on {args.database} database")
                 # print(mongodoc)
         pass
@@ -118,6 +175,8 @@ if __name__=="__main__":
     root = tree.getroot()
     print("XML parse completed")
     if args.type == "sql":
+        time_pattern = sql_time_pattern
         sql_server_trace(root, db)
     elif args.type == "procmon":
+        time_pattern = procmon_time_pattern
         procmon_trace(root, db)

@@ -64,3 +64,25 @@ MongoDB utilizes full date-time representations for its date values. However, wh
 As a result, to accommodate this in MongoDB while maintaining the integrity of the time values, all `Time_of_Day` values in the `events` collection for Process Monitor traces are set to have a date of `1900-01-01`. This serves as a placeholder date, ensuring that the time values from the Process Monitor output are preserved accurately.
 
 Users should be aware of this when querying or analyzing the data, ensuring that they account for this placeholder date and focus on the time values for accurate analysis.
+
+
+
+### Performance
+Originally took ~634 seconds to complete with a procmon XML file that was ~1.5GB
+
+with regex style conversion instead of try/except;
+processed 3040000 documents, time elapsed 594.5791807174683
+approx 2 seconds per 10k documents
+
+with conversion based on xml tag;
+processed 3040000 documents, time elapsed 582.9120292663574
+
+with mongobatching in 10k document increments
+Inserted 10000 documents to mongo, 45.729369163513184
+Inserted 3049505 documents to the event collection on procmontrace database
+
+with mongobatching in 50k document increments
+Processed and inserted 3000000 documents, time elapsed 43.397167921066284
+Inserted 3049505 documents to the event collection on procmontrace database
+
+moral of the story here is that I should have applied some profiling instead of assuming that the try_convert function was the source of the slowness.
