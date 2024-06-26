@@ -12,6 +12,7 @@ import re
 int_pattern = re.compile(r'^\d+$')
 float_pattern = re.compile(r'^\d+\.\d+$')
 sql_time_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}T')
+eventvwr_time_pattern = sql_time_pattern
 procmon_time_pattern = re.compile(r'^\d{2}:\d{2}:\d{2}\.\d{7} \w{2}$')
 
 strings = [
@@ -32,6 +33,7 @@ integers = [ # process monitor tags
             "ClientProcessID", "SPID", "Reads", "Writes", "CPU"
             ]
 floats = []
+arrays = ["System"]
 
 
 
@@ -68,7 +70,38 @@ def try_convert_by_tag(value, tag):
     else:
         return try_convert(value)
 
+def eventvwr_trace(root, mongodb):
+    print("Starting eventvwr trace import")
+    url = "http://schemas.microsoft.com/win/2004/08/events/event"
+    def process_array(arr):
+        ret={}
+        for item in arr:
+            if item.text is not None:
+                data = item.text.replace(url, "")
+                # print(data)
+                ret[item.tag.replace("{"+url+"}","")] = try_convert(data)
 
+        return ret
+
+
+
+    for events in root:
+        # print(child.tag)
+        mongodoc = {}
+        for event in events:
+            # print(event.tag)
+            if "System" in event.tag:
+                system = process_array(event)
+                mongodoc["System"] = system
+            if "EventData" in event.tag:
+                mongodoc["EventData"] = {}
+                for child in event:
+                    if "Data" in child.tag:
+                        mongodoc["EventData"]["Data"] = child.text
+            
+        collection.insert_one(mongodoc)
+
+    
 def sql_server_trace(root, mongodb):
     if args.drop:
         print("Dropping trace collection")
@@ -152,7 +185,7 @@ if __name__=="__main__":
     parser.add_argument('-m','--mongodb', help="MongoDB connection string", default="mongodb://localhost")
     parser.add_argument('database', help="Database to import to", default='sqltrace')
     parser.add_argument('destcollection', help="Collection to insert to", default='trace')
-    parser.add_argument('-t', dest="type", help="XML type (sql, procmon)")
+    parser.add_argument('-t', dest="type", help="XML type (sql, procmon, eventvwr)")
     parser.add_argument('--drop', help="Drop collections before importing", action="store_true", default=False)
 
 
@@ -180,3 +213,6 @@ if __name__=="__main__":
     elif args.type == "procmon":
         time_pattern = procmon_time_pattern
         procmon_trace(root, db)
+    elif args.type == "eventvwr":
+        time_pattern = eventvwr_time_pattern
+        eventvwr_trace(root, db)
