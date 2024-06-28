@@ -7,8 +7,8 @@ import uuid
 import datetime
 import time
 import re
+import csv
 
-# def try_convert(value):
 int_pattern = re.compile(r'^\d+$')
 float_pattern = re.compile(r'^\d+\.\d+$')
 sql_time_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}T')
@@ -37,7 +37,7 @@ arrays = ["System"]
 
 
 
-def try_convert(value):
+def try_convert(value, time_pattern):
     if value is None:
         return None
     if bool(int_pattern.match(value)):
@@ -79,7 +79,7 @@ def eventvwr_trace(root, mongodb):
             if item.text is not None:
                 data = item.text.replace(url, "")
                 # print(data)
-                ret[item.tag.replace("{"+url+"}","")] = try_convert(data)
+                ret[item.tag.replace("{"+url+"}","")] = try_convert(data, eventvwr_time_pattern)
 
         return ret
 
@@ -176,6 +176,38 @@ def procmon_trace(root, mongodb):
                 # print(mongodoc)
         pass
 
+def ssv_log(filename, mongodb, headers, strp_format):
+    """
+    Imports IIS type logs (space separated values). Removes any lines that start with `#`
+    """
+    with open(filename, 'r') as f:
+        read = csv.reader(f, delimiter=' ')
+        count = 0
+        mongobatch = []
+        
+        for line in read:
+            # print(line[0][0], line)
+            if line[0][0]=="#":
+                continue
+
+            mongodoc = {"_id":count}
+            mongodoc["ts"] = datetime.datetime.strptime(line[0]+line[1], strp_format)
+            index = 0
+            for item in headers:
+                # print(item, index+2, line[index+2])
+                mongodoc[item] = try_convert(line[index+2], re.compile("<><><><>"))
+                index+=1
+            mongobatch.append(mongodoc);
+
+            count+=1
+
+            if count % 50000 == 0:
+                collection.insert_many(mongobatch)
+                mongobatch = []
+        
+        collection.insert_many(mongobatch)
+
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
             prog='xmltomongo',
@@ -185,11 +217,14 @@ if __name__=="__main__":
     parser.add_argument('-m','--mongodb', help="MongoDB connection string", default="mongodb://localhost")
     parser.add_argument('database', help="Database to import to", default='sqltrace')
     parser.add_argument('destcollection', help="Collection to insert to", default='trace')
-    parser.add_argument('-t', dest="type", help="XML type (sql, procmon, eventvwr)")
+    parser.add_argument('-t', dest="type", help="File type (sql, procmon, eventvwr, iis, httperr)")
+    #TODO add to collection
+    #parser.add_argument('--append', dest="append", help="Append to existing collection", action="store_true", default=False)
     parser.add_argument('--drop', help="Drop collections before importing", action="store_true", default=False)
 
-
     args = parser.parse_args()
+    print(args)
+
     CONNECTION_STRING = args.mongodb
     client = MongoClient(CONNECTION_STRING)
 
@@ -198,21 +233,31 @@ if __name__=="__main__":
     collection = db[colname]
 
     count = collection.count_documents({})
-    if count!=0: # if collection has records create a new one
+    if count!=0: #and not args.append: # if collection has records create a new one
         colname = 'trace'+str(uuid.uuid4())
         collection = db[colname]
     print(colname)
 
     print(f"Loading file {args.importfile}")
-    tree = ET.parse(args.importfile)
-    root = tree.getroot()
-    print("XML parse completed")
-    if args.type == "sql":
-        time_pattern = sql_time_pattern
-        sql_server_trace(root, db)
-    elif args.type == "procmon":
-        time_pattern = procmon_time_pattern
-        procmon_trace(root, db)
-    elif args.type == "eventvwr":
-        time_pattern = eventvwr_time_pattern
-        eventvwr_trace(root, db)
+    if args.type == "iis":
+        # removed date, time from the headers
+        headers = ['s-ip','cs-method','cs-uri-stem','cs-uri-query','s-port','cs-username','c-ip','cs(User-Agent)','cs(Referer)','sc-status','sc-substatus','sc-win32-status','time-taken']
+        ssv_log(args.importfile, db, headers, "%Y-%m-%d%H:%M:%S")
+    elif args.type == "httperr":
+        # removed date, time from the headers
+        headers = ['c-ip','c-port','s-ip','s-port','cs-version','cs-method','cs-uri','streamid','sc-status','s-siteid','s-reason','s-queuename']
+        ssv_log(args.importfile, db, headers, "%Y-%m-%d%H:%M:%S")
+    else:
+        
+        tree = ET.parse(args.importfile)
+        root = tree.getroot()
+        print("XML parse completed")
+        if args.type == "sql":
+            # time_pattern = sql_time_pattern
+            sql_server_trace(root, db)
+        elif args.type == "procmon":
+            # time_pattern = procmon_time_pattern
+            procmon_trace(root, db)
+        elif args.type == "eventvwr":
+            # time_pattern = eventvwr_time_pattern
+            eventvwr_trace(root, db)
